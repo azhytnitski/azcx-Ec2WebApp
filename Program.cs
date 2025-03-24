@@ -4,9 +4,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 var app = builder.Build();
 
-var region = EC2InstanceMetadata.Region;
-var az = EC2InstanceMetadata.AvailabilityZone;
-
 app.MapGet("/", () => new
 {
     Region = EC2InstanceMetadata.Region.SystemName,
