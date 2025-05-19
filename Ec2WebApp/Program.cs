@@ -247,55 +247,6 @@ app.MapPost("/images", async (IFormFile file, ImageMetadataContext db) =>
     return Results.Ok($"Image '{fileName}' uploaded successfully.");
 }).DisableAntiforgery();
 
-// Background process to process SQS messages and send them to SNS
-var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
-_ = Task.Run(async () =>
-{
-    while (await timer.WaitForNextTickAsync())
-    {
-        try
-        {
-            Console.WriteLine("[SQS] Attempting to receive messages from SQS queue...");
-            var receiveMessageRequest = new ReceiveMessageRequest
-            {
-                QueueUrl = sqsQueueUrl,
-                MaxNumberOfMessages = 10,
-                WaitTimeSeconds = 5
-            };
-            var response = await sqsClient.ReceiveMessageAsync(receiveMessageRequest);
-            Console.WriteLine($"[SQS] Received {response.Messages?.Count ?? 0} message(s) from SQS queue.");
-
-            foreach (var message in response.Messages ?? Enumerable.Empty<Message>())
-            {
-                Console.WriteLine($"[SQS] Processing message with ID: {message.MessageId}");
-
-
-                var imageInfo = JsonSerializer.Deserialize<ImageInfo>(message.Body);
-                var snsMessage = $"An image has been uploaded:\n\n" +
-                 $"Name: {imageInfo.Name}\n" +
-                 $"Size: {imageInfo.Size} bytes\n" +
-                 $"Extension: {imageInfo.FileExtension}\n" +
-                 $"Download Link: {imageInfo.DownloadLink}";
-                Console.WriteLine($"[SNS] Publishing message to SNS topic: {snsTopicArn}\n[SNS] Message: {snsMessage}");
-                var publishResponse = await snsClient.PublishAsync(new PublishRequest
-                {
-                    TopicArn = snsTopicArn,
-                    Message = snsMessage
-                });
-                Console.WriteLine($"[SNS] Published message to SNS. MessageId: {publishResponse.MessageId}");
-
-                Console.WriteLine($"[SQS] Deleting message with ID: {message.MessageId} from SQS queue...");
-                await sqsClient.DeleteMessageAsync(sqsQueueUrl, message.ReceiptHandle);
-                Console.WriteLine($"[SQS] Deleted message with ID: {message.MessageId} from SQS queue.");
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[SQS] Exception occurred during SQS message processing: {ex}");
-        }
-    }
-});
-
 // Delete an image by name
 app.MapDelete("/images/{name}", async (string name, ImageMetadataContext db) =>
 {
