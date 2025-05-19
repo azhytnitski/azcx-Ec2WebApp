@@ -1,0 +1,368 @@
+Resources:
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-aliaksandr-zhytnitski-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: alias/aws/s3
+      PublicAccessBlockConfiguration:
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+  BucketBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument:
+        Id: RequireEncryptionInTransit
+        Version: '2012-10-17'
+        Statement:
+          - Principal: '*'
+            Action: '*'
+            Effect: Deny
+            Resource:
+              - !GetAtt Bucket.Arn
+              - !Sub ${Bucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      Tags:
+        - Value: azcx-VPC
+          Key: Name
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: azcx-igw
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.11.0/24
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Value: azcx-PublicSubnet-A
+          Key: Name
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.12.0/24
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Value: azcx-PublicSubnet-B
+          Key: Name
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Value: azcx-RouteTable
+          Key: Name
+  Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  SubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref PublicSubnetA
+  SubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref PublicSubnetB
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: SecurityGroup1
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SshAccessIpParameter
+      Tags:
+        - Value: azcx-SecGr1
+          Key: Name
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for RDS instance
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: azcx-RDSSecurityGroup
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: azcx-LaunchTemplate
+      LaunchTemplateData:
+        ImageId: !Ref AmiParameter
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        InstanceType: !Ref InstanceTypeParameter
+        KeyName: az-cx-ec2-1-1
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: true
+            Groups:
+              - !Ref SecurityGroup
+            DeleteOnTermination: true
+        Monitoring:
+          Enabled: true
+      TagSpecifications:
+        - ResourceType: launch-template
+          Tags:
+            - Value: azcx-LaunchTemplate
+              Key: Name
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MaxSize: '4'
+      MinSize: '1'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      VPCZoneIdentifier:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+      Tags:
+        - Value: azcx-AutoScalingGroup
+          Key: Name
+          PropagateAtLaunch: false
+  ScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 50
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+      Tags:
+        - Key: Name
+          Value: azcx-LoadBalancer
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      Protocol: HTTP
+      Port: 80
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VPC
+      Protocol: HTTP
+      Port: 80
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref RoleParameter
+  DbSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.13.0/24
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Value: azcx-DbSubnet-A
+          Key: Name
+  DbSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.21.0/24
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: AWS::Region
+      Tags:
+        - Value: azcx-DbSubnet-B
+          Key: Name
+  DbRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Value: azcx-DbRouteTable
+          Key: Name
+  DbSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref DbRouteTable
+      SubnetId: !Ref DbSubnetA
+  DbSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref DbRouteTable
+      SubnetId: !Ref DbSubnetB
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: azcx-postgresql-instance
+      AllocatedStorage: 20
+      DBInstanceClass: db.t4g.micro
+      Engine: postgres
+      MasterUsername: !Ref RDSMasterUsername
+      MasterUserPassword: !Ref RDSMasterUserPassword
+      DBSubnetGroupName: !Ref RDSSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 0
+      StorageType: gp2
+  RDSSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS instance
+      SubnetIds:
+        - !Ref DbSubnetA
+        - !Ref DbSubnetB
+      Tags:
+        - Key: Name
+          Value: azcx-RDSSubnetGroup
+  S3BucketNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /azcx/s3/bucket-name
+      Type: String
+      Value: !Ref Bucket
+      Description: S3 bucket name for the application
+  RDSUsernameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /azcx/rds/username
+      Type: String
+      Value: !Ref RDSMasterUsername
+      Description: RDS username for the application
+  RDSPasswordParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /azcx/rds/password
+      Type: String
+      Value: !Ref RDSMasterUserPassword
+      Description: RDS password for the application
+  RDSEndpointParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /azcx/rds/endpoint
+      Type: String
+      Value: !GetAtt RDSInstance.Endpoint.Address
+      Description: RDS endpoint for the application
+  UploadsNotificationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: azcx-UploadsNotificationQueue
+      MessageRetentionPeriod: 60
+  UploadsNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: azcx-UploadsNotificationTopic
+  UploadsNotificationQueueNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /azcx/sqs/uploads-notification-queue-name
+      Type: String
+      Value: azcx-UploadsNotificationQueue
+      Description: Name of the SQS queue for uploads notifications
+  UploadsNotificationTopicNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /azcx/sns/uploads-notification-topic-name
+      Type: String
+      Value: azcx-UploadsNotificationTopic
+      Description: Name of the SNS topic for uploads notifications
+  UploadsNotificationTopicArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /azcx/sns/uploads-notification-topic-arn
+      Type: String
+      Value: !Ref UploadsNotificationTopic
+      Description: ARN of the SNS topic for uploads notifications
+  UploadsNotificationQueueUrlParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /azcx/sqs/uploads-notification-queue-url
+      Type: String
+      Value: !Ref UploadsNotificationQueue
+      Description: URL of the SQS queue for uploads notifications
+  RDSDatabaseNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /azcx/rds/database
+      Type: String
+      Value: postgres
+      Description: RDS database name for the application
+Parameters:
+  AmiParameter:
+    Description: AMI to use for EC2 instance creation
+    Type: String
+    Default: ami-003d3ded6cdc5169b
+  InstanceTypeParameter:
+    Description: Instance type to use for EC2 instance creation
+    Type: String
+    Default: t3.micro
+  RoleParameter:
+    Description: Role for EC2 instances to assume
+    Type: String
+    Default: FullAccessRoleS3RDS
+  SshAccessIpParameter:
+    Description: IP address allowed for SSH access
+    Type: String
+    Default: 20.215.212.83/32
+  RDSMasterUsername:
+    Description: Master username for the RDS instance
+    Type: String
+    Default: postgres
+  RDSMasterUserPassword:
+    Description: Master user password for the RDS instance
+    Type: String
+    NoEcho: true
