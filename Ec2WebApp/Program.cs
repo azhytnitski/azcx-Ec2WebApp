@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using Amazon.Lambda;
+using Amazon.Lambda.Model;
 using Amazon.RDS.Util;
 using Amazon.Runtime.CredentialManagement;
 using Amazon.S3;
@@ -45,7 +47,7 @@ if (string.IsNullOrEmpty(bucketName))
 
 // Configure AWS S3 client
 AmazonS3Client s3Client;
-var profileName = Environment.GetEnvironmentVariable("AWS_PROFILE_NAME"); // Get profile name from environment variable
+var profileName = System.Environment.GetEnvironmentVariable("AWS_PROFILE_NAME"); // Get profile name from environment variable
 
 if (!string.IsNullOrEmpty(profileName))
 {
@@ -267,6 +269,33 @@ app.MapDelete("/images/{name}", async (string name, ImageMetadataContext db) =>
     {
         return Results.NotFound($"Image '{name}' not found.");
     }
+});
+
+// Add endpoint to trigger DataConsistencyFunction Lambda
+app.MapPost("/trigger-data-consistency", async (HttpContext httpContext) =>
+{
+    var lambdaClient = new AmazonLambdaClient();
+    var functionName = $"azcx-DataConsistencyFunction"; // Or set explicitly
+
+    // Pass a payload with 'detail-type' to distinguish invocation source
+    var payload = JsonSerializer.Serialize(new { DetailType = "web-app" });
+
+    var request = new InvokeRequest
+    {
+        FunctionName = functionName,
+        InvocationType = InvocationType.RequestResponse,
+        Payload = payload
+    };
+
+    var response = await lambdaClient.InvokeAsync(request);
+    string responseBody;
+    using (var reader = new StreamReader(response.Payload))
+    {
+        responseBody = await reader.ReadToEndAsync();
+    }
+
+    httpContext.Response.ContentType = "application/json";
+    await httpContext.Response.WriteAsync(responseBody);
 });
 
 // Default route

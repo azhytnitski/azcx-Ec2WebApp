@@ -1,0 +1,21 @@
+
+{
+    "region" : "eu-north-1",
+    "profile" : "azcx-azhytnitski",
+    "configuration" : "Release",
+    "framework"     : "net8.0",
+    "function-name" : "azcx-UploadsNotificationFunction",
+    "package-type"  : "Zip",
+    "function-handler" : "UploadsNotificationFunction::UploadsNotificationFunction.Function::Handler",
+    "function-memory-size" : 256,
+    "function-role"        : "arn:aws:iam::831926629301:role/lambda_exec_azcx-UploadsNotificationFunction",
+    "function-timeout"     : 10,
+    "function-runtime"     : "dotnet8",
+    "function-architecture" : "x86_64",
+    "function-subnets"      : "",
+    "function-security-groups" : "",
+    "tracing-mode"             : "PassThrough",
+    "environment-variables"    : "\"foo\"=\"bar2\"",
+    "image-tag"                : "",
+    "function-description"     : ""
+}

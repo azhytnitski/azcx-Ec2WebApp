@@ -1,0 +1,27 @@
+
+{
+    "Information" : [
+        "This file provides default values for the deployment wizard inside Visual Studio and the AWS Lambda commands added to the .NET Core CLI.",
+        "To learn more about the Lambda commands with the .NET Core CLI execute the following command at the command line in the project root directory.",
+        "dotnet lambda help",
+        "All the command line options for the Lambda command can be specified in this file."
+    ],
+    "profile"     : "azcx-azhytnitski",
+    "region"      : "eu-north-1",
+    "configuration" : "Release",
+    "function-runtime" : "dotnet8",
+    "function-memory-size" : 256,
+    "function-timeout"     : 30,
+    "function-handler"     : "DataConsistencyFunction::DataConsistencyFunction.Function::FunctionHandler",
+    "framework"            : "net8.0",
+    "function-name"        : "azcx-DataConsistencyFunction",
+    "package-type"         : "Zip",
+    "function-role"        : "arn:aws:iam::831926629301:role/lambda_exec_azcx-UploadsNotificationFunction",
+    "function-architecture" : "x86_64",
+    "function-subnets"      : "subnet-0de0e56737859062d,subnet-095e8e7a3870d9c15",
+    "function-security-groups" : "sg-040674e7a2446b02c,sg-004b4dea8bcdd2f0a",
+    "tracing-mode"             : "PassThrough",
+    "environment-variables"    : "",
+    "image-tag"                : "",
+    "function-description"     : ""
+}
