@@ -1,0 +1,19 @@
+﻿version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      dotnet: 8.0
+  pre_build:
+    commands:
+      - echo Restoring .NET dependencies...
+      - dotnet restore UploadsNotificationFunction/UploadsNotificationFunction.csproj
+  build:
+    commands:
+      - echo Building .NET Lambda function...
+      - dotnet publish UploadsNotificationFunction/UploadsNotificationFunction.csproj -c Release -o publish
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: publish

@@ -1,0 +1,46 @@
+Transform: 'AWS::Serverless-2016-10-31'
+
+Resources:
+  UploadsNotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: azcx-UploadsNotificationFunction
+      Handler: UploadsNotificationFunction::UploadsNotificationFunction.Function::Handler
+      Runtime: dotnet8
+      CodeUri: s3://stack-0519-1-aliaksandr-zhytnitski-831926629301/app.zip
+      AutoPublishAlias: live
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - sqs:ReceiveMessage
+                - sqs:DeleteMessage
+                - sqs:GetQueueAttributes
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - sns:Publish
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "arn:aws:logs:*:*:*"
+            - Effect: Allow
+              Action:
+                - ssm:GetParameter
+              Resource: "*"
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: arn:aws:sqs:eu-north-1:831926629301:azcx-UploadsNotificationQueue
+            BatchSize: 1
+      DeploymentPreference:
+        Type: AllAtOnce
+
+Outputs:
+  LambdaFunctionArn:
+    Description: ARN of the Lambda function
+    Value: !GetAtt UploadsNotificationFunction.Arn
