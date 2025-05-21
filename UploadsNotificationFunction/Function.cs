@@ -41,7 +41,8 @@ public class Function
                                  $"Name: {imageInfo?.Name}\n" +
                                  $"Size: {imageInfo?.Size} bytes\n" +
                                  $"Extension: {imageInfo?.FileExtension}\n" +
-                                 $"Download Link: {imageInfo?.DownloadLink}";
+                                 $"Download Link: {imageInfo?.DownloadLink}" +
+                                 "Have a nice day.";
 
                 await _snsClient.PublishAsync(new PublishRequest
                 {
